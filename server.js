@@ -4,8 +4,21 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 require('dotenv').config();
 
+// Debug wrapper to log paths when routers are registered
+function wrapRouter(router, prefix = '') {
+  const methods = ['get', 'post', 'put', 'delete', 'patch'];
+  methods.forEach((method) => {
+    const original = router[method].bind(router);
+    router[method] = (path, ...handlers) => {
+      console.log(`[DEBUG] Registering router.${method} path: ${prefix}${path}`);
+      return original(path, ...handlers);
+    };
+  });
+  return router;
+}
+
 // Import routes
-const authRoutes = require('./routes/auth');
+const authRoutes = wrapRouter(require('./routes/auth'), '/api/auth');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -66,7 +79,7 @@ app.use('*', (req, res) => {
 // Global error handler
 app.use((error, req, res, next) => {
   console.error('Global error handler:', error);
-  
+
   res.status(500).json({
     success: false,
     message: 'Internal server error',
