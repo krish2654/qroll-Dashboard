@@ -4,21 +4,8 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 require('dotenv').config();
 
-// Debug wrapper to log paths when routers are registered
-function wrapRouter(router, prefix = '') {
-  const methods = ['get', 'post', 'put', 'delete', 'patch'];
-  methods.forEach((method) => {
-    const original = router[method].bind(router);
-    router[method] = (path, ...handlers) => {
-      console.log(`[DEBUG] Registering router.${method} path: ${prefix}${path}`);
-      return original(path, ...handlers);
-    };
-  });
-  return router;
-}
-
 // Import routes
-const authRoutes = wrapRouter(require('./routes/auth'), '/api/auth');
+const authRoutes = require('./routes/auth');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -26,6 +13,7 @@ const PORT = process.env.PORT || 5000;
 // Middleware
 console.log('FRONTEND_URL:', process.env.FRONTEND_URL);
 
+// CORS setup — ONLY for requests from frontend
 app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:5173',
   credentials: true
@@ -34,7 +22,7 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-// Request logging middleware
+// Request logging
 app.use((req, res, next) => {
   console.log(`${req.method} ${req.path} - ${new Date().toISOString()}`);
   next();
@@ -54,7 +42,7 @@ mongoose.connect(process.env.MONGODB_URI, {
   process.exit(1);
 });
 
-// Health check endpoint
+// Health check
 app.get('/', (req, res) => {
   res.json({
     success: true,
@@ -64,8 +52,13 @@ app.get('/', (req, res) => {
   });
 });
 
-// API Routes
-app.use('/api/auth', authRoutes);
+// API Routes — ALWAYS use a proper path string, not a URL
+try {
+  app.use('/api/auth', authRoutes);
+  console.log('✅ Auth routes mounted at /api/auth');
+} catch (err) {
+  console.error('❌ Error mounting auth routes:', err);
+}
 
 // 404 handler
 app.use('*', (req, res) => {
@@ -101,7 +94,7 @@ app.listen(PORT, () => {
 🚀 Qroll Backend Server Started!
 📍 Port: ${PORT}
 🌐 Environment: ${process.env.NODE_ENV}
-🎯 Frontend URL: ${process.env.FRONTEND_URL}
+🎯 Frontend URL (CORS): ${process.env.FRONTEND_URL}
 📊 Database: Connected to MongoDB Atlas
 ⏰ Started at: ${new Date().toISOString()}
   `);
