@@ -1,5 +1,5 @@
 {
-  "name": "qroll-dashboard",
+  "name": "qroll-Dashboard",
   "version": "1.0.0",
   "description": "Backend for Qroll Smart Attendance",
   "main": "server.js",
