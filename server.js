@@ -2,11 +2,14 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
+const path = require('path');
 require('dotenv').config();
 
 // Import routes
 const authRoutes = require('./routes/auth');
 const classRoutes = require('./routes/classes');
+const lectureRoutes = require('./routes/lectures');
+const fileRoutes = require('./routes/files');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -40,6 +43,9 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
+// Serve uploaded files statically
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
 // Request logging middleware
 app.use((req, res, next) => {
   console.log(`${req.method} ${req.path} - ${new Date().toISOString()} - Origin: ${req.get('Origin') || 'No Origin'}`);
@@ -64,6 +70,14 @@ app.get('/', (req, res) => {
     message: '🎯 Qroll Backend API is running!',
     version: '1.0.0',
     domain: 'https://qroll.duckdns.org',
+    features: [
+      'Google Authentication',
+      'Class Management', 
+      'Live Lectures with QR',
+      'File Management',
+      'Attendance Tracking',
+      'Analytics Dashboard'
+    ],
     timestamp: new Date().toISOString()
   });
 });
@@ -77,6 +91,9 @@ app.get('/api', (req, res) => {
     domain: 'https://qroll.duckdns.org',
     endpoints: {
       auth: '/api/auth',
+      classes: '/api/classes',
+      lectures: '/api/lectures',
+      files: '/api/files',
       health: '/api'
     },
     timestamp: new Date().toISOString()
@@ -86,6 +103,49 @@ app.get('/api', (req, res) => {
 // API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/classes', classRoutes);
+app.use('/api/lectures', lectureRoutes);
+app.use('/api/files', fileRoutes);
+
+// Join lecture route (for QR code scanning)
+app.get('/join-lecture/:qrToken', (req, res) => {
+  const { qrToken } = req.params;
+  
+  // Redirect to frontend with the QR token
+  const redirectUrl = `${process.env.FRONTEND_URL}/join-lecture/${qrToken}`;
+  
+  res.redirect(redirectUrl);
+});
+
+// Shared file access route
+app.get('/shared/file/:shareToken', async (req, res) => {
+  try {
+    const { shareToken } = req.params;
+    const File = require('./models/File');
+    
+    const file = await File.findOne({
+      'shareSettings.shareToken': shareToken,
+      'shareSettings.isShared': true
+    });
+
+    if (!file || !file.isValidShare()) {
+      return res.status(404).json({
+        success: false,
+        message: 'File not found or share link expired'
+      });
+    }
+
+    // Redirect to frontend file viewer
+    const viewUrl = `${process.env.FRONTEND_URL}/view-file/${shareToken}`;
+    res.redirect(viewUrl);
+    
+  } catch (error) {
+    console.error('Shared file access error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error accessing shared file'
+    });
+  }
+});
 
 // 404 handler
 app.use('*', (req, res) => {
@@ -100,12 +160,44 @@ app.use('*', (req, res) => {
 app.use((error, req, res, next) => {
   console.error('Global error handler:', error);
   
+  // Handle multer errors
+  if (error.code === 'LIMIT_FILE_SIZE') {
+    return res.status(400).json({
+      success: false,
+      message: 'File too large. Maximum size is 50MB.'
+    });
+  }
+  
+  if (error.code === 'LIMIT_FILE_COUNT') {
+    return res.status(400).json({
+      success: false,
+      message: 'Too many files. Maximum 10 files per upload.'
+    });
+  }
+
+  if (error.message && error.message.includes('Invalid file type')) {
+    return res.status(400).json({
+      success: false,
+      message: error.message
+    });
+  }
+  
   res.status(500).json({
     success: false,
     message: 'Internal server error',
     error: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong'
   });
 });
+
+// Cleanup expired lectures every hour
+setInterval(async () => {
+  try {
+    const Lecture = require('./models/Lecture');
+    await Lecture.cleanupExpiredTokens();
+  } catch (error) {
+    console.error('Error cleaning up expired lectures:', error);
+  }
+}, 60 * 60 * 1000); // 1 hour
 
 // Graceful shutdown
 process.on('SIGINT', async () => {
@@ -124,6 +216,7 @@ app.listen(PORT, () => {
 🔗 Domain: https://qroll.duckdns.org
 🎯 Frontend URL: ${process.env.FRONTEND_URL}
 📊 Database: Connected to MongoDB Atlas
+⚡ Features: Auth, Classes, Lectures, Files, Analytics
 ⏰ Started at: ${new Date().toISOString()}
   `);
 });
