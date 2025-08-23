@@ -1,11 +1,10 @@
-// models/User.js
 const mongoose = require('mongoose');
 
 const userSchema = new mongoose.Schema({
   googleId: {
     type: String,
     required: true,
-    unique: true
+    unique: true  // This already creates an index
   },
   name: {
     type: String,
@@ -14,7 +13,7 @@ const userSchema = new mongoose.Schema({
   email: {
     type: String,
     required: true,
-    unique: true
+    unique: true  // This already creates an index
   },
   profilePicture: {
     type: String,
@@ -23,7 +22,8 @@ const userSchema = new mongoose.Schema({
   role: {
     type: String,
     enum: ['teacher', 'student', null],
-    default: null
+    default: null,
+    index: true  // Only add index for role since it's not unique
   },
   isActive: {
     type: Boolean,
@@ -36,10 +36,5 @@ const userSchema = new mongoose.Schema({
 }, {
   timestamps: true // Adds createdAt and updatedAt
 });
-
-// Create indexes for better query performance
-userSchema.index({ email: 1 });
-userSchema.index({ googleId: 1 });
-userSchema.index({ role: 1 });
 
 module.exports = mongoose.model('User', userSchema);
