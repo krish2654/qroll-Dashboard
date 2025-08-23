@@ -6,6 +6,7 @@ require('dotenv').config();
 
 // Import routes
 const authRoutes = require('./routes/auth');
+const classRoutes = require('./routes/classes');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -13,7 +14,9 @@ const PORT = process.env.PORT || 5000;
 // CORS configuration - Allow multiple origins
 const allowedOrigins = [
   'https://qroll-frontend.vercel.app',
-  'http://51.20.108.121:5000/',
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'https://localhost:5173',
   // Add any other domains you might use
 ];
 
@@ -82,6 +85,7 @@ app.get('/api', (req, res) => {
 
 // API Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/classes', classRoutes);
 
 // 404 handler
 app.use('*', (req, res) => {
