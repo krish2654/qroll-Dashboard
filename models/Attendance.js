@@ -237,167 +237,28 @@ attendanceSchema.statics.getStats = async function(classId, options = {}) {
     ? Math.round(((result.present + result.late) / total) * 100) 
     : 0;
 
-  return result;
 };
 
-// Static method to get attendance by date range
-attendanceSchema.statics.getAttendanceByDateRange = async function(classId, startDate, endDate, options = {}) {
-  const { groupBy = 'date' } = options;
-  
-  const matchQuery = {
-    class: classId,
-    date: {
-      $gte: new Date(startDate),
-      $lte: new Date(endDate)
-    }
-  };
-
-  let groupByField;
-  switch (groupBy) {
-    case 'week':
-      groupByField = { 
-        $dateToString: { 
-          format: "%Y-W%U", 
-          date: "$date" 
-        } 
-      };
-      break;
-    case 'month':
-      groupByField = { 
-        $dateToString: { 
-          format: "%Y-%m", 
-          date: "$date" 
-        } 
-      };
-      break;
-    default:
-      groupByField = { 
-        $dateToString: { 
-          format: "%Y-%m-%d", 
-          date: "$date" 
-        } 
-      };
-  }
-
-  const pipeline = [
-    { $match: matchQuery },
-    {
-      $group: {
-        _id: {
-          period: groupByField,
-          status: '$status'
-        },
-        count: { $sum: 1 }
-      }
-    },
-    {
-      $group: {
-        _id: '$_id.period',
-        attendance: {
-          $push: {
-            status: '$_id.status',
-            count: '$count'
-          }
-        }
-      }
-    },
-    { $sort: { _id: 1 } }
-  ];
-
-  return this.aggregate(pipeline);
+// Static method to get lecture attendance
+attendanceSchema.statics.getLectureAttendance = async function(lectureId) {
+  return this.find({ lectureId })
+    .populate('studentId', 'name email profilePicture')
+    .sort({ timestamp: 1 });
 };
 
-// Static method to get student attendance summary
-attendanceSchema.statics.getStudentSummary = async function(classId, studentId, options = {}) {
-  const { startDate, endDate } = options;
+// Static method to get student attendance history
+attendanceSchema.statics.getStudentHistory = async function(studentId, classId) {
+  const Lecture = mongoose.model('Lecture');
   
-  const matchQuery = {
-    class: classId,
-    student: studentId
-  };
-
-  if (startDate || endDate) {
-    matchQuery.date = {};
-    if (startDate) matchQuery.date.$gte = new Date(startDate);
-    if (endDate) matchQuery.date.$lte = new Date(endDate);
-  }
-
-  const summary = await this.aggregate([
-    { $match: matchQuery },
-    {
-      $group: {
-        _id: '$student',
-        totalSessions: { $sum: 1 },
-        presentCount: {
-          $sum: {
-            $cond: [
-              { $in: ['$status', ['present', 'late']] },
-              1,
-              0
-            ]
-          }
-        },
-        lateCount: {
-          $sum: {
-            $cond: [{ $eq: ['$status', 'late'] }, 1, 0]
-          }
-        },
-        absentCount: {
-          $sum: {
-            $cond: [{ $eq: ['$status', 'absent'] }, 1, 0]
-          }
-        },
-        excusedCount: {
-          $sum: {
-            $cond: [{ $eq: ['$status', 'excused'] }, 1, 0]
-          }
-        },
-        lastAttendance: { $max: '$markedAt' },
-        firstAttendance: { $min: '$markedAt' }
-      }
-    }
-  ]);
-
-  if (summary.length === 0) {
-    return {
-      totalSessions: 0,
-      presentCount: 0,
-      lateCount: 0,
-      absentCount: 0,
-      excusedCount: 0,
-      attendanceRate: 0,
-      lastAttendance: null,
-      firstAttendance: null
-    };
-  }
-
-  const result = summary[0];
-  result.attendanceRate = Math.round((result.presentCount / result.totalSessions) * 100);
+  const lectures = await Lecture.find({ classId }).select('_id');
+  const lectureIds = lectures.map(l => l._id);
   
-  return result;
+  return this.find({ 
+    lectureId: { $in: lectureIds },
+    studentId 
+  })
+  .populate('lectureId', 'title startTime subjectId')
+  .sort({ timestamp: -1 });
 };
-
-// Instance method to check if attendance is late
-attendanceSchema.methods.checkLateStatus = async function() {
-  if (!this.lecture) return false;
-  
-  await this.populate('lecture');
-  const lecture = this.lecture;
-  const graceMinutes = lecture.settings?.lateJoinGracePeriod || 15;
-  const lateThreshold = new Date(lecture.startTime.getTime() + graceMinutes * 60 * 1000);
-  
-  const wasLate = this.markedAt > lateThreshold;
-  
-  if (wasLate && this.status === 'present') {
-    this.status = 'late';
-    await this.save();
-  }
-  
-  return wasLate;
-};
-
-// Ensure virtual fields are serialized
-attendanceSchema.set('toJSON', { virtuals: true });
-attendanceSchema.set('toObject', { virtuals: true });
 
 module.exports = mongoose.model('Attendance', attendanceSchema);

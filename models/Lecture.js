@@ -2,28 +2,35 @@
 const mongoose = require('mongoose');
 
 const lectureSchema = new mongoose.Schema({
-  class: {
+  classId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Class',
     required: true
   },
-  teacher: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
+  subjectId: {
+    type: String,
+    required: true // Subject code from the class subjects array
   },
   title: {
     type: String,
-    default: 'Live Lecture'
+    required: true,
+    trim: true
+  },
+  description: {
+    type: String,
+    trim: true
+  },
+  status: {
+    type: String,
+    enum: ['scheduled', 'active', 'completed', 'cancelled'],
+    default: 'scheduled'
   },
   startTime: {
     type: Date,
-    required: true,
-    default: Date.now
+    required: true
   },
   endTime: {
-    type: Date,
-    default: null
+    type: Date
   },
   duration: {
     type: Number, // in minutes
@@ -31,131 +38,84 @@ const lectureSchema = new mongoose.Schema({
   },
   qrToken: {
     type: String,
-    required: true,
-    unique: true
+    unique: true,
+    sparse: true
   },
-  tokenExpiry: {
-    type: Date,
-    required: true
+  qrCode: {
+    type: String // Base64 encoded QR code image
   },
-  isActive: {
-    type: Boolean,
-    default: true
+  qrTokenExpiry: {
+    type: Date
+  },
+  studentsJoined: {
+    type: Number,
+    default: 0
+  },
+  joinUrl: {
+    type: String
   },
   location: {
-    room: String,
-    building: String,
-    coordinates: {
-      latitude: Number,
-      longitude: Number
-    }
+    latitude: Number,
+    longitude: Number,
+    radius: { type: Number, default: 100 }
   },
   settings: {
+    requireLocation: {
+      type: Boolean,
+      default: false
+    },
     allowLateJoin: {
       type: Boolean,
       default: true
     },
-    lateJoinGracePeriod: {
-      type: Number, // in minutes
-      default: 15
-    },
-    requireLocation: {
+    autoEnd: {
       type: Boolean,
-      default: false
-    }
-  },
-  metadata: {
-    totalStudents: {
-      type: Number,
-      default: 0
-    },
-    attendanceCount: {
-      type: Number,
-      default: 0
+      default: true
     }
   }
 }, {
   timestamps: true
 });
 
-// Index for efficient queries
-lectureSchema.index({ class: 1, isActive: 1 });
-lectureSchema.index({ teacher: 1, startTime: -1 });
+// Index for faster queries
+lectureSchema.index({ classId: 1 });
+lectureSchema.index({ subjectId: 1 });
 lectureSchema.index({ qrToken: 1 });
-lectureSchema.index({ tokenExpiry: 1 });
+lectureSchema.index({ status: 1 });
+lectureSchema.index({ startTime: 1 });
 
-// Virtual for lecture duration calculation
-lectureSchema.virtual('actualDuration').get(function() {
-  if (this.endTime) {
-    return Math.round((this.endTime - this.startTime) / 60000); // in minutes
+// Generate unique QR token with 5-second expiry
+lectureSchema.methods.generateQRToken = function() {
+  const token = Math.random().toString(36).substring(2, 15) + 
+                Math.random().toString(36).substring(2, 15);
+  this.qrToken = token;
+  this.qrTokenExpiry = new Date(Date.now() + 5 * 1000); // 5 seconds
+  return token;
+};
+
+// Check if QR token is valid
+lectureSchema.methods.isQRTokenValid = function() {
+  return this.qrToken && this.qrTokenExpiry && new Date() < this.qrTokenExpiry;
+};
+
+// Auto-refresh token every 5 seconds for active lectures
+lectureSchema.methods.refreshToken = async function() {
+  if (this.status === 'active') {
+    this.generateQRToken();
+    await this.save();
+    return this.qrToken;
   }
-  return Math.round((new Date() - this.startTime) / 60000);
-});
+  return null;
+};
 
-// Virtual for attendance rate
-lectureSchema.virtual('attendanceRate').get(function() {
-  if (this.metadata.totalStudents === 0) return 0;
-  return Math.round((this.metadata.attendanceCount / this.metadata.totalStudents) * 100);
-});
-
-// Static method to cleanup expired tokens
+// Clean up expired tokens
 lectureSchema.statics.cleanupExpiredTokens = async function() {
   const result = await this.updateMany(
-    { 
-      tokenExpiry: { $lt: new Date() },
-      isActive: true 
-    },
-    { 
-      isActive: false,
-      endTime: new Date()
-    }
+    { qrTokenExpiry: { $lt: new Date() } },
+    { $unset: { qrToken: 1, qrTokenExpiry: 1, qrCode: 1 } }
   );
-  
-  console.log(`Cleaned up ${result.modifiedCount} expired lectures`);
-  return result.modifiedCount;
+  return result;
 };
 
-// Static method to get active lectures for a teacher
-lectureSchema.statics.getActiveLecturesByTeacher = async function(teacherId) {
-  return this.find({
-    teacher: teacherId,
-    isActive: true
-  }).populate('class', 'subject name').sort({ startTime: -1 });
-};
-
-// Instance method to extend lecture duration
-lectureSchema.methods.extendDuration = async function(additionalMinutes) {
-  this.duration += additionalMinutes;
-  return this.save();
-};
-
-// Instance method to refresh QR token
-lectureSchema.methods.refreshQRToken = async function() {
-  const timestamp = Date.now().toString(36);
-  const randomStr = Math.random().toString(36).substring(2, 15);
-  this.qrToken = `qr_${timestamp}_${randomStr}`;
-  this.tokenExpiry = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
-  return this.save();
-};
-
-// Pre-save middleware to update metadata
-lectureSchema.pre('save', async function(next) {
-  if (this.isNew || this.isModified('class')) {
-    try {
-      const Class = mongoose.model('Class');
-      const classDoc = await Class.findById(this.class);
-      if (classDoc) {
-        this.metadata.totalStudents = classDoc.students.length;
-      }
-    } catch (error) {
-      console.error('Error updating lecture metadata:', error);
-    }
-  }
-  next();
-});
-
-// Ensure virtual fields are serialized
-lectureSchema.set('toJSON', { virtuals: true });
-lectureSchema.set('toObject', { virtuals: true });
 
 module.exports = mongoose.model('Lecture', lectureSchema);

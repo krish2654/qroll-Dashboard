@@ -35,13 +35,13 @@ router.get('/my-classes', authenticateToken, requireRole(['teacher']), async (re
 // Create new class
 router.post('/create', authenticateToken, requireRole(['teacher']), async (req, res) => {
   try {
-    const { name, subject, description, schedule, settings } = req.body;
+    const { name, section, subjects, description, schedule } = req.body;
 
     // Validation
-    if (!name || !subject) {
+    if (!name || !section) {
       return res.status(400).json({
         success: false,
-        message: 'Class name and subject are required'
+        message: 'Class name and section are required'
       });
     }
 
@@ -50,12 +50,11 @@ router.post('/create', authenticateToken, requireRole(['teacher']), async (req, 
 
     const newClass = new Class({
       name: name.trim(),
-      subject: subject.trim(),
-      description: description?.trim(),
+      section: section.trim(),
+      subjects: subjects || [],
       classCode,
       teacher: req.user._id,
-      schedule: schedule || {},
-      settings: settings || {}
+      schedule: schedule || {}
     });
 
     await newClass.save();
@@ -63,7 +62,7 @@ router.post('/create', authenticateToken, requireRole(['teacher']), async (req, 
     // Populate teacher info for response
     await newClass.populate('teacher', 'name email');
 
-    console.log(`New class created: ${name} (${classCode}) by ${req.user.email}`);
+    console.log(`New class created: ${name} ${section} (${classCode}) by ${req.user.email}`);
 
     res.status(201).json({
       success: true,

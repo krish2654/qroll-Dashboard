@@ -11,80 +11,90 @@ const router = express.Router();
 // Start a new lecture session
 router.post('/start', authenticateToken, requireRole(['teacher']), async (req, res) => {
   try {
-    const { classId, duration = 60 } = req.body;
+    const { classId, subjectId, title, description, duration = 60 } = req.body;
 
-    if (!classId) {
+    if (!classId || !subjectId) {
       return res.status(400).json({
         success: false,
-        message: 'Class ID is required'
+        message: 'Class ID and Subject ID are required'
       });
     }
 
-    // Verify teacher owns this class
+    // Verify teacher has access to this class
     const classDoc = await Class.findOne({
       _id: classId,
       teacher: req.user._id
     });
 
     if (!classDoc) {
-      return res.status(404).json({
+      return res.status(403).json({
         success: false,
-        message: 'Class not found or access denied'
+        message: 'Access denied to this class'
       });
     }
 
-    // Check if there's already an active lecture
+    // Verify subject exists in class
+    const subject = classDoc.subjects.find(s => s.code === subjectId);
+    if (!subject) {
+      return res.status(400).json({
+        success: false,
+        message: 'Subject not found in this class'
+      });
+    }
+
+    // Check if there's already an active lecture for this class
     const existingLecture = await Lecture.findOne({
-      class: classId,
-      isActive: true
+      classId: classId,
+      status: 'active'
     });
 
     if (existingLecture) {
       return res.status(400).json({
         success: false,
-        message: 'A lecture is already active for this class'
+        message: 'There is already an active lecture for this class'
       });
     }
 
     // Create new lecture
     const lecture = new Lecture({
-      class: classId,
-      teacher: req.user._id,
+      classId,
+      subjectId,
+      title: title || `${subject.name} Lecture`,
+      description,
       startTime: new Date(),
-      duration: duration,
-      qrToken: generateQRToken(),
-      tokenExpiry: new Date(Date.now() + 5 * 60 * 1000), // 5 minutes
-      isActive: true
+      duration,
+      status: 'active'
     });
+
+    // Generate QR token and code
+    const qrToken = lecture.generateQRToken();
+    const qrCodeUrl = `${process.env.FRONTEND_URL}/join-lecture/${qrToken}`;
+    
+    // Generate QR code image
+    const qrCodeImage = await QRCode.toDataURL(qrCodeUrl);
+    
+    lecture.qrCode = qrCodeImage;
+    lecture.joinUrl = qrCodeUrl;
 
     await lecture.save();
 
-    // Generate QR code
-    const joinUrl = `${process.env.FRONTEND_URL}/join-lecture/${lecture.qrToken}`;
-    const qrCodeDataUrl = await QRCode.toDataURL(joinUrl, {
-      width: 200,
-      margin: 2,
-      color: {
-        dark: '#000000',
-        light: '#FFFFFF'
-      }
-    });
+    console.log(`Lecture started: ${lecture.title} for ${subject.name} in ${classDoc.name} by ${req.user.email}`);
 
-    console.log(`Lecture started: ${classDoc.subject} by ${req.user.email}`);
-
-    res.json({
+    res.status(201).json({
       success: true,
       message: 'Lecture started successfully',
       lecture: {
         id: lecture._id,
-        classId: lecture.class,
+        title: lecture.title,
+        classId: lecture.classId,
+        subjectId: lecture.subjectId,
         startTime: lecture.startTime,
         duration: lecture.duration,
+        status: lecture.status,
         qrToken: lecture.qrToken,
-        qrCode: qrCodeDataUrl,
-        joinUrl: joinUrl,
-        studentsJoined: 0,
-        isActive: true
+        qrCode: lecture.qrCode,
+        joinUrl: lecture.joinUrl,
+        studentsJoined: lecture.studentsJoined
       }
     });
 
