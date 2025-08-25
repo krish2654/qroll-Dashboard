@@ -3,8 +3,7 @@ const mongoose = require('mongoose');
 
 const attendanceSchema = new mongoose.Schema({
   lectureId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Lecture',
+    type: String, // Can be either ObjectId or session UUID
     required: true,
     index: true
   },
@@ -18,6 +17,16 @@ const attendanceSchema = new mongoose.Schema({
     type: Date,
     default: Date.now,
     index: true
+  },
+  sessionType: {
+    type: String,
+    enum: ['lecture', 'session'],
+    default: 'session'
+  },
+  location: {
+    lat: Number,
+    lng: Number,
+    accuracy: Number
   },
 }, {
   timestamps: true

@@ -9,6 +9,7 @@ require('dotenv').config();
 const authRoutes = require('./routes/auth');
 const classRoutes = require('./routes/classes');
 const lectureRoutes = require('./routes/lectures');
+const sessionRoutes = require('./routes/sessions');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -89,6 +90,7 @@ app.get('/api', (req, res) => {
       auth: '/api/auth',
       classes: '/api/classes',
       lectures: '/api/lectures',
+      sessions: '/api/sessions',
       health: '/api'
     },
     timestamp: new Date().toISOString()
@@ -99,13 +101,14 @@ app.get('/api', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/classes', classRoutes);
 app.use('/api/lectures', lectureRoutes);
+app.use('/api/sessions', sessionRoutes);
 
-// Join lecture route (for QR code scanning)
-app.get('/join-lecture/:qrToken', (req, res) => {
+// Join session route (for QR code scanning)
+app.get('/join-session/:qrToken', (req, res) => {
   const { qrToken } = req.params;
   
   // Redirect to frontend with the QR token
-  const redirectUrl = `${process.env.FRONTEND_URL}/join-lecture/${qrToken}`;
+  const redirectUrl = `${process.env.FRONTEND_URL}/join-session/${qrToken}`;
   
   res.redirect(redirectUrl);
 });
