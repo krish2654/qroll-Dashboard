@@ -8,6 +8,7 @@ require('dotenv').config();
 // Import routes
 const authRoutes = require('./routes/auth');
 const classRoutes = require('./routes/classes');
+const classGroupRoutes = require('./routes/classGroups'); // ADD THIS LINE
 const lectureRoutes = require('./routes/lectures');
 const fileRoutes = require('./routes/files');
 
@@ -92,6 +93,7 @@ app.get('/api', (req, res) => {
     endpoints: {
       auth: '/api/auth',
       classes: '/api/classes',
+      classGroups: '/api/class-groups', // ADD THIS LINE
       lectures: '/api/lectures',
       files: '/api/files',
       health: '/api'
@@ -103,6 +105,7 @@ app.get('/api', (req, res) => {
 // API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/classes', classRoutes);
+app.use('/api/class-groups', classGroupRoutes); // ADD THIS LINE
 app.use('/api/lectures', lectureRoutes);
 app.use('/api/files', fileRoutes);
 
